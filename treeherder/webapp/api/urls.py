@@ -5,6 +5,7 @@ from rest_framework import routers
 
 from treeherder.webapp.api import (artifact,
                                    bug,
+                                   failureline,
                                    job_log_url,
                                    jobs,
                                    logslice,
@@ -100,6 +101,8 @@ default_router.register(r'user', refdata.UserViewSet, base_name='user')
 default_router.register(r'exclusion-profile', refdata.ExclusionProfileViewSet)
 default_router.register(r'job-exclusion', refdata.JobExclusionViewSet)
 default_router.register(r'matcher', refdata.MatcherViewSet)
+default_router.register(r'failure-line', failureline.FailureLineViewSet,
+                        base_name='failure-line')
 
 urlpatterns = patterns(
     '',
