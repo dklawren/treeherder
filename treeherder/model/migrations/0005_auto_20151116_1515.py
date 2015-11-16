@@ -8,7 +8,7 @@ import treeherder.model.fields
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('model', '0003_auto_20151103_0521'),
+        ('model', '0004_add_runnable_job_table'),
     ]
 
     operations = [
@@ -19,11 +19,16 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='failureline',
             name='best_classification',
-            field=treeherder.model.fields.FlexibleForeignKey(related_name='best_for_lines', to='model.FailureClassification', null=True),
+            field=treeherder.model.fields.FlexibleForeignKey(related_name='best_for_lines', to='model.ClassifiedFailure', null=True),
         ),
         migrations.AddField(
             model_name='failureline',
-            name='is_verified',
-            field=models.NullBooleanField(),
+            name='best_is_verified',
+            field=models.BooleanField(default=False),
+        ),
+        migrations.AlterField(
+            model_name='failurematch',
+            name='classified_failure',
+            field=treeherder.model.fields.FlexibleForeignKey(related_name='matches', to='model.ClassifiedFailure'),
         ),
     ]
