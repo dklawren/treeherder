@@ -92,6 +92,11 @@
             "sql":"UPDATE `result_set` SET `push_timestamp` = ? WHERE id = 1",
 
             "host_type":"master_host"
+        },
+        "set_job_result":{
+            "sql":"UPDATE `job` SET `result` = ? WHERE id = ?",
+
+            "host_type":"master_host"
         }
     },
     "inserts": {
