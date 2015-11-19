@@ -35,7 +35,7 @@ def match_errors(repository, jm, job_guid):
 
     # Only try to autoclassify where we have a failure status; sometimes there can be
     # error lines even in jobs marked as passing.
-    if job["result"] not in ["testfailed", "busted"]:
+    if job["result"] not in ["testfailed", "busted", "exception"]:
         return
 
     unmatched_failures = FailureLine.objects.unmatched_for_job(repository, job_guid)
