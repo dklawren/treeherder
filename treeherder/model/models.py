@@ -522,6 +522,21 @@ class ReferenceDataSignatures(models.Model):
         verbose_name_plural = 'reference data signatures'
 
 
+class JobDuration(models.Model):
+    """
+    Average job duration for each repository/job signature combination.
+
+    These are updated periodically by the calculate_durations task.
+    """
+    signature = models.CharField(max_length=50L)
+    repository = models.ForeignKey(Repository)
+    average_duration = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'job_duration'
+        unique_together = ('signature', 'repository')
+
+
 class FailureLineManager(models.Manager):
     def unmatched_for_job(self, repository, job_guid):
         return FailureLine.objects.filter(
