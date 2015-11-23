@@ -39,7 +39,7 @@ treeherder.factory('ThFailureLinesModel', [
                         return $q.reject("got too many classified_failures");
                     } else {
                         return $http.put(thUrl.getRootUrl("/failure-line/" + line_id + "/"),
-                                         {best_classification: response.id});
+                                         {best_classification: response.data[0].id});
                     }
 
                 }, function(error) {
