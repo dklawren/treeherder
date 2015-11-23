@@ -32,7 +32,7 @@ treeherder.factory('ThClassifiedFailuresModel', [
 
         ThClassifiedFailuresModel.get_or_create_for_bug = function(bug_number) {
             // todo: camd: make this do the right thing once jgraham implements it on the back-end.
-            return $http.get(
+            return $http.post(
                 ThClassifiedFailuresModel.get_url(),
                 {params: {bug_number: bug_number}}
             );
