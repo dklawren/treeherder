@@ -292,7 +292,10 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
         'hawkrest.HawkAuthentication',
         'treeherder.webapp.api.auth.TwoLeggedOauthAuthentication',
-    )
+    ),
+    'DEFAULT_FILTER_BACKENDS': (
+        'rest_framework_filters.backends.DjangoFilterBackend',
+    ),
 }
 
 SITE_URL = os.environ.get("SITE_URL", "http://local.treeherder.mozilla.org")
