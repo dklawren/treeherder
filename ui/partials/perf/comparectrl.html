@@ -14,32 +14,26 @@
         <strong>tests with no results:</strong>
         {{testNoResults}}
       </div>
-      <h4>Filters</h4>
       <form class="form-inline">
         <div class="form-group">
-          <label for="filter-test">Test</label>
-            <input id="filter-test" type="text" class="form-control" ng-model="filterOptions.testFilter" placeholder="e.g. tp5o opt" ng-change="updateFilters()"/>
+          <select ng-model="filterOptions.framework"
+                  ng-options="framework.name for framework in frameworks track by framework.id"
+                  ng-change="updateFilters()"/>
         </div>
+        &nbsp;
         <div class="form-group">
-          <label for="filter-platform">Platform</label>
-            <input id="filter-platform" type="text" class="form-control" ng-model="filterOptions.platformFilter" placeholder="e.g. linux64" ng-change="updateFilters()"/>
+            <input id="filter" type="text" class="form-control" ng-model="filterOptions.filter" placeholder="filter text e.g. linux tp5o" ng-change="updateFilters()" ng-model-options="{debounce: 250}"/>
         </div>
-        <div class="checkbox" tooltip="Non-trivial changes (1.5%+)">
+        <div class="checkbox" uib-tooltip="Non-trivial changes (2%+)">
           <label>
             <input type="checkbox" ng-model="filterOptions.showOnlyImportant" ng-change="updateFilters()"/>
             Show only important changes
           </label>
         </div>
-        <div class="checkbox" tooltip="At least 6 datapoints OR 2+ datapoints and a large difference">
+        <div class="checkbox" uib-tooltip="At least 6 datapoints OR 2+ datapoints and a large difference">
           <label>
             <input type="checkbox" ng-model="filterOptions.showOnlyConfident" ng-change="updateFilters()"/>
             Hide uncertain results
-          </label>
-        </div>
-        <div class="checkbox" tooltip="Platforms which don't produce consistent / reliable data -- beware!">
-          <label>
-            <input type="checkbox" ng-model="filterOptions.showUnreliablePlatforms" ng-change="updateFilters()"/>
-            Show unreliable platforms
           </label>
         </div>
       </form>
@@ -48,11 +42,10 @@
          titles="titles"
          test-list="testList"
          compare-results="compareResults"
-         test-filter="filterOptions.testFilter"
-         platform-filter="filterOptions.platformFilter"
+         framework-id="filterOptions.framework.id"
+         filter="filterOptions.filter"
          show-only-important="filterOptions.showOnlyImportant"
-         show-only-confident="filterOptions.showOnlyConfident"
-         show-unreliable-platforms="filterOptions.showUnreliablePlatforms">
+         show-only-confident="filterOptions.showOnlyConfident">
       </ph-compare-table>
     </div>
   </div>

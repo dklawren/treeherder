@@ -11,9 +11,14 @@ from treeherder.perfalert import Analyzer
 
 
 def generate_new_alerts_in_series(signature):
-    series = PerformanceDatum.objects.filter(
-        signature=signature).order_by(
-            'push_timestamp')
+    # get series data starting from either:
+    # (1) the last alert, if there is one
+    # (2) the alerts max age
+    # (use whichever is newer)
+    max_alert_age = (datetime.datetime.now() -
+                     settings.PERFHERDER_ALERTS_MAX_AGE)
+    series = PerformanceDatum.objects.filter(signature=signature).filter(
+        push_timestamp__gte=max_alert_age).order_by('push_timestamp')
     existing_alerts = PerformanceAlert.objects.filter(
         series_signature=signature).select_related(
             'summary').order_by('-summary__result_set_id')[:1]
@@ -29,9 +34,15 @@ def generate_new_alerts_in_series(signature):
                    testrun_id=datum.result_set_id)
     prev = None
     analyzed_series = a.analyze_t()
-
+    prev_testrun_id = None
     with transaction.atomic():
         for (prev, cur) in zip(analyzed_series, analyzed_series[1:]):
+            # we can have the same testrun id in a sequence if there are
+            # retriggers, so only set the prev_testrun_id if that isn't
+            # the case
+            if prev.testrun_id != cur.testrun_id:
+                prev_testrun_id = prev.testrun_id
+
             if cur.state == 'regression':
                 prev_value = cur.historical_stats['avg']
                 new_value = cur.forward_stats['avg']
@@ -54,7 +65,7 @@ def generate_new_alerts_in_series(signature):
                 summary, _ = PerformanceAlertSummary.objects.get_or_create(
                     repository=signature.repository,
                     result_set_id=cur.testrun_id,
-                    prev_result_set_id=prev.testrun_id,
+                    prev_result_set_id=prev_testrun_id,
                     defaults={
                         'last_updated': datetime.datetime.fromtimestamp(
                             cur.push_timestamp)

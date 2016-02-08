@@ -17,10 +17,12 @@
 .navbar {
     min-height: 36px;
     margin-bottom: 0px;
+    border-radius: 0px;
 }
 
 .navbar .dropdown-menu {
     max-height: 600px;
+    min-width: 112px;
     overflow: auto;
     margin-top: 10px;
     padding-bottom: 8px;

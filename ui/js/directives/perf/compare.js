@@ -2,47 +2,58 @@
 
 treeherder.directive(
     'phCompareTable',
-    ['PhCompare', 'phUnreliablePlatforms', function(PhCompare, phUnreliablePlatforms) {
+    ['PhCompare', function(PhCompare) {
         return {
             templateUrl: 'partials/perf/comparetable.html',
             scope: {
                 titles: '=',
                 compareResults: '=',
                 testList: '=',
-                testFilter: '=',
-                platformFilter: '=',
+                frameworkId: '=',
+                filter: '=',
                 showOnlyImportant: '=',
-                showOnlyConfident: '=',
-                showUnreliablePlatforms: '='
+                showOnlyConfident: '='
             },
             link: function(scope, element, attrs) {
                 scope.getCompareClasses = PhCompare.getCompareClasses;
                 function filter(item, matchText) {
                     return !matchText || item.toLowerCase().indexOf(matchText.toLowerCase()) > (-1);
                 }
-                scope.filterTest = function(item) {
-                    return filter(item, scope.testFilter);
-                };
-                scope.filterPlatform = function(result) {
-                    return filter(result.name, scope.platformFilter) &&
+                function shouldBeShown(result) {
+                    return (scope.frameworkId === undefined || result.frameworkId === scope.frameworkId) &&
                         (!scope.showOnlyImportant || result.isMeaningful) &&
-                        (!scope.showOnlyConfident || result.isConfident) &&
-                        (scope.showUnreliablePlatforms || !_.contains(
-                            phUnreliablePlatforms, result.name));
-                };
-                function updateFilteredTestList() {
-                    scope.filteredTestList = _.filter(_.keys(scope.compareResults), function(testName) {
-                        return scope.filterTest(scope.titles[testName]) &&
-                            _.any(_.map(scope.compareResults[testName], function(result) {
-                                return scope.filterPlatform(result);
-                            }));
-                    }).sort();
+                        (!scope.showOnlyConfident || result.isConfident);
                 }
-                scope.$watchGroup(['testFilter', 'platformFilter',
-                                   'showOnlyImportant', 'showOnlyConfident',
-                                   'showUnreliablePlatforms'], function() {
-                    updateFilteredTestList();
-                });
+                function filterResult(results, key) {
+                    if (scope.filter === undefined) {
+                        return results;
+                    }
+                    return _.filter(results, function(result) {
+                        var testCondition = key + ' ' + result.name;
+                        return _.every(scope.filter.split(' '), function(matchText) {
+                            return filter(testCondition, matchText) && shouldBeShown(result);
+                        });
+                    });
+                }
+
+                function updateFilteredTestList() {
+                    scope.filteredResultList = {};
+                    _.forEach(scope.compareResults, function(result, key) {
+                        var compareResults = filterResult(result, key);
+                        if (compareResults.length > 0) {
+                            scope.filteredResultList[key] = compareResults;
+                        }
+                    });
+                    scope.filteredResultList = _.map(_.keys(scope.filteredResultList), function(testName) {
+                        return {'testName': testName, 'results': scope.filteredResultList[testName]};
+                    });
+                    scope.hasNoResults = _.isEmpty(scope.filteredResultList);
+                }
+
+                scope.$watchGroup(['frameworkId', 'filter', 'showOnlyImportant', 'showOnlyConfident'],
+                                  function() {
+                                      updateFilteredTestList();
+                                  });
                 updateFilteredTestList();
             }
         };

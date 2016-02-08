@@ -1,5 +1,4 @@
 from django.conf.urls import (include,
-                              patterns,
                               url)
 from rest_framework import routers
 
@@ -103,11 +102,16 @@ default_router.register(r'matcher', refdata.MatcherViewSet)
 default_router.register(r'performance/alertsummary',
                         performance_data.PerformanceAlertSummaryViewSet,
                         base_name='performance-alert-summaries')
+default_router.register(r'performance/alert',
+                        performance_data.PerformanceAlertViewSet,
+                        base_name='performance-alerts')
+default_router.register(r'performance/framework',
+                        performance_data.PerformanceFrameworkViewSet,
+                        base_name='performance-frameworks')
 
-urlpatterns = patterns(
-    '',
+urlpatterns = [
     url(r'^project/(?P<project>[\w-]{0,50})/',
         include(project_bound_router.urls)),
     url(r'^',
         include(default_router.urls)),
-)
+]

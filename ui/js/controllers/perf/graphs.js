@@ -1,12 +1,12 @@
 "use strict";
 
 perf.controller('GraphsCtrl', [
-    '$state', '$stateParams', '$scope', '$rootScope', '$location', '$modal',
+    '$state', '$stateParams', '$scope', '$rootScope', '$location', '$uibModal',
     'thServiceDomain', '$http', '$q', '$timeout', 'PhSeries',
     'ThRepositoryModel', 'ThOptionCollectionModel', 'ThResultSetModel',
     'phTimeRanges', 'phDefaultTimeRangeValue',
     function GraphsCtrl($state, $stateParams, $scope, $rootScope, $location,
-                        $modal, thServiceDomain, $http, $q, $timeout, PhSeries,
+                        $uibModal, thServiceDomain, $http, $q, $timeout, PhSeries,
                         ThRepositoryModel, ThOptionCollectionModel,
                         ThResultSetModel, phTimeRanges, phDefaultTimeRangeValue) {
         var availableColors = [ 'red', 'green', 'blue', 'orange', 'purple' ];
@@ -98,7 +98,7 @@ perf.controller('GraphsCtrl', [
                     dvp = v / v0 - 1;
 
                 $scope.tooltipContent = {
-                    project: _.findWhere($scope.projects,
+                    project: _.findWhere($rootScope.repos,
                                          { name: phSeries.projectName }),
                     revisionUrl: thServiceDomain + '#/jobs?repo=' + phSeries.projectName,
                     test: phSeries.name,
@@ -107,7 +107,8 @@ perf.controller('GraphsCtrl', [
                     deltaValue: dv.toFixed(1),
                     deltaPercentValue: (100 * dvp).toFixed(1),
                     date: $.plot.formatDate(new Date(t), '%a %b %d, %H:%M:%S'),
-                    retriggers: (retriggerNum['retrigger'] - 1)
+                    retriggers: (retriggerNum['retrigger'] - 1),
+                    revisionInfoAvailable: true
                 };
 
                 // Get revision information for both this datapoint and the previous
@@ -122,8 +123,15 @@ perf.controller('GraphsCtrl', [
                                    function(revisions) {
                                        $scope.tooltipContent[resultRevision.scopeKey] =
                                            revisions[0];
+                                       if ($scope.tooltipContent.prevRevision && $scope.tooltipContent.revision) {
+                                           $scope.tooltipContent.pushlogURL = $scope.tooltipContent.project.getPushLogHref({
+                                               from: $scope.tooltipContent.prevRevision,
+                                               to: $scope.tooltipContent.revision
+                                           });
+                                       }
                                    }, function(error) {
-                                       console.log("Failed to get revision: " + error.reason);
+                                       $scope.tooltipContent.revisionInfoAvailable = false;
+                                       console.log("Failed to get revision: " + error.data);
                                    });
                        });
 
@@ -319,8 +327,7 @@ perf.controller('GraphsCtrl', [
             // synchronize series visibility with flot, in case it's changed
             $scope.seriesList.forEach(function(series) {
                 series.flotSeries.points.show = series.visible;
-                series.active = true;
-                series.blockColor = series.active ? series.color : "grey";
+                series.blockColor = series.visible ? series.color : "grey";
             });
 
             // reset highlights
@@ -338,9 +345,10 @@ perf.controller('GraphsCtrl', [
                                 return ThResultSetModel.getResultSetsFromRevision(
                                     series.projectName, rev).then(
                                         function(resultSets) {
-                                            var resultSetId = resultSets[0].id;
-                                            var j = series.flotSeries.resultSetData.indexOf(resultSetId);
-                                            series.highlightedPoints.push(j);
+                                            series.highlightedPoints = _.union(series.highlightedPoints,  _.compact(_.map(
+                                                series.flotSeries.resultSetData, function(resultSetId, index) {
+                                                    return resultSets[0].id == resultSetId ? index : null;
+                                                })));
                                         }, function(reason) {
                                             /* ignore cases where no result set exists
                                                for revision */
@@ -580,7 +588,7 @@ perf.controller('GraphsCtrl', [
                              // a hint on what the problem is
                              alert("Error loading performance data\n\n" + error);
                          });
-        };
+        }
 
         $scope.removeSeries = function(projectName, signature) {
             var newSeriesList = [];
@@ -708,9 +716,8 @@ perf.controller('GraphsCtrl', [
                     };
                     $scope.selectedDataPoint = (tooltipString) ? tooltip : null;
                 }
-                ThRepositoryModel.get_list().then(function(response) {
+                ThRepositoryModel.load().then(function() {
 
-                    $scope.projects = response.data;
                     $scope.addTestData = function(option, seriesSignature) {
                         var defaultProjectName, defaultPlatform;
                         var options = {};
@@ -725,13 +732,13 @@ perf.controller('GraphsCtrl', [
                             options = { option: option, relatedSeries: series };
                         }
 
-                        var modalInstance = $modal.open({
+                        var modalInstance = $uibModal.open({
                             templateUrl: 'partials/perf/testdatachooser.html',
                             controller: 'TestChooserCtrl',
                             size: 'lg',
                             resolve: {
                                 projects: function() {
-                                    return $scope.projects;
+                                    return $rootScope.repos;
                                 },
                                 optionCollectionMap: function() {
                                     return optionCollectionMap;
@@ -775,7 +782,26 @@ perf.controller('GraphsCtrl', [
             });
     }]);
 
-perf.controller('TestChooserCtrl', function($scope, $modalInstance, $http,
+perf.filter('testNameContainsWords', function() {
+    /**
+     Filter a list of test by ensuring that every word in the textFilter is
+     present in the test name.
+     **/
+    return function(tests, textFilter) {
+        if (!textFilter) {
+            return tests;
+        }
+
+        var filters = textFilter.split(/\s+/);
+        return _.filter(tests, function(test) {
+            return _.every(filters, function(filter) {
+                return test.name.indexOf(filter) !== -1;
+            });
+        });
+    };
+});
+
+perf.controller('TestChooserCtrl', function($scope, $uibModalInstance, $http,
                                             projects, optionCollectionMap,
                                             timeRange, thServiceDomain,
                                             thDefaultRepo, PhSeries,
@@ -806,11 +832,11 @@ perf.controller('TestChooserCtrl', function($scope, $modalInstance, $http,
             series[i] = _.clone(selectedSeries);
             series[i].projectName = selectedSeries.projectName;
         });
-        $modalInstance.close(series);
+        $uibModalInstance.close(series);
     };
 
     $scope.cancel = function () {
-        $modalInstance.dismiss('cancel');
+        $uibModalInstance.dismiss('cancel');
     };
 
     $scope.unselectedTestList = []; // tests in the "tests" list
@@ -893,7 +919,8 @@ perf.controller('TestChooserCtrl', function($scope, $modalInstance, $http,
                 var testList = _.sortBy(_.filter(series.seriesList,
                     {platform: relatedSeries.platform}), 'name');
                 var temp = _.findWhere(testList, {"name": relatedSeries.name});
-                $scope.testsToAdd.push(_.clone(temp));
+                if (temp !== undefined)
+                    $scope.testsToAdd.push(_.clone(temp));
             });
         }).then(function () {
             loadingExtraDataPromise.resolve($scope.testsToAdd.length);
@@ -960,5 +987,5 @@ perf.controller('TestChooserCtrl', function($scope, $modalInstance, $http,
 
     };
 
-    $modalInstance.updateTestInput = $scope.updateTestInput;
+    $uibModalInstance.updateTestInput = $scope.updateTestInput;
 });

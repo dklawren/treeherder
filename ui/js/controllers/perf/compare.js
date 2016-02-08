@@ -2,11 +2,13 @@
 
 perf.controller('CompareChooserCtrl', [
     '$state', '$stateParams', '$scope', 'ThRepositoryModel', 'ThResultSetModel',
-    'phCompareDefaultNewRepo', 'phCompareDefaultOriginalRepo',
+    'phCompareDefaultNewRepo', 'phCompareDefaultOriginalRepo', 'JsonPushes',
+    'thPerformanceBranches',
     function CompareChooserCtrl($state, $stateParams, $scope,
                                 ThRepositoryModel, ThResultSetModel,
                                 phCompareDefaultNewRepo,
-                                phCompareDefaultOriginalRepo) {
+                                phCompareDefaultOriginalRepo,
+                                JsonPushes, thPerformanceBranches) {
         ThRepositoryModel.get_list().success(function(projects) {
             $scope.projects = projects;
             $scope.originalTipList = [];
@@ -58,6 +60,61 @@ perf.controller('CompareChooserCtrl', [
                 $scope.newRevision = tip;
             };
 
+            $scope.getPreviousRevision = function() {
+                $scope.proposedRevision = $scope.newRevisionError = null;
+
+                // only check for a full revision
+                if ($scope.newRevision.length != 12) return;
+
+                $scope.proposedRevisionLoading = true;
+
+                var promise;
+                if ($scope.newProject.name === "try") {
+                    // try require some special logic
+                    var iProjs = _.filter($scope.projects, function(proj) {
+                        return _.includes(thPerformanceBranches,
+                                          proj.name);
+                    });
+                    promise = JsonPushes.getPreviousRevisionFrom(
+                        $scope.newProject,
+                        $scope.newRevision,
+                        iProjs
+                    );
+                } else {
+                    // any other branch
+                    promise = JsonPushes.getPreviousRevision(
+                        $scope.newProject,
+                        $scope.newRevision
+                    ).then(function (revision) {
+                        return {
+                            revision:revision,
+                            project: $scope.newProject,
+                        };
+                    });
+                }
+
+                promise.then(
+                    function(result) {
+                        $scope.proposedRevision = {
+                            revision: result.revision.slice(0, 12),
+                            project: result.project
+                        };
+                    },
+                    function(error) {
+                        $scope.newRevisionError = error.toString();
+                    }
+                ).finally(function() {
+                    $scope.proposedRevisionLoading = false;
+                });
+            };
+
+            $scope.setProposedRevision = function() {
+                var rev = $scope.proposedRevision;
+                $scope.proposedRevision = null;
+                $scope.originalProject = rev.project;
+                $scope.originalRevision = rev.revision;
+            };
+
             $scope.runCompare = function() {
                 ThResultSetModel.getResultSetsFromRevision($scope.originalProject.name, $scope.originalRevision).then(
                     function(resultSets) {
@@ -91,13 +148,13 @@ perf.controller('CompareChooserCtrl', [
 perf.controller('CompareResultsCtrl', [
     '$state', '$stateParams', '$scope', '$rootScope', '$location',
     'thServiceDomain', 'ThOptionCollectionModel', 'ThRepositoryModel',
-    'ThResultSetModel', '$http', '$q', '$timeout', 'PhSeries', 'math',
-    'phTimeRanges', 'PhCompare',
+    'ThResultSetModel', '$http', '$q', '$timeout', 'PhFramework', 'PhSeries',
+    'math', 'phTimeRanges', 'PhCompare',
     function CompareResultsCtrl($state, $stateParams, $scope,
                                 $rootScope, $location,
                                 thServiceDomain, ThOptionCollectionModel,
                                 ThRepositoryModel, ThResultSetModel, $http,
-                                $q, $timeout, PhSeries, math,
+                                $q, $timeout, PhFramework, PhSeries, math,
                                 phTimeRanges,
                                 PhCompare) {
         function displayComparison() {
@@ -240,13 +297,11 @@ perf.controller('CompareResultsCtrl', [
         $scope.getCompareClasses = PhCompare.getCompareClasses;
 
         $scope.updateFilters = function() {
-
             $state.transitionTo('compare', {
-                filterTest: $scope.filterOptions.testFilter,
-                filterPlatform: $scope.filterOptions.platformFilter,
+                framework: $scope.filterOptions.framework.id,
+                filter: $scope.filterOptions.filter,
                 showOnlyImportant: Boolean($scope.filterOptions.showOnlyImportant) ? undefined : 0,
-                showOnlyConfident: Boolean($scope.filterOptions.showOnlyConfident) ? 1 : undefined,
-                showUnreliablePlatforms: Boolean($scope.filterOptions.showUnreliablePlatforms) ? 1 : undefined
+                showOnlyConfident: Boolean($scope.filterOptions.showOnlyConfident) ? 1 : undefined
             }, {
                 location: true,
                 inherit: true,
@@ -261,7 +316,11 @@ perf.controller('CompareResultsCtrl', [
             function(_optionCollectionMap) {
                 optionCollectionMap = _optionCollectionMap;
             });
-        $q.all([loadRepositories, loadOptions]).then(function() {
+        var loadFrameworks = PhFramework.getFrameworkList().then(
+            function(frameworks) {
+                $scope.frameworks = frameworks.data;
+            });
+        $q.all([loadRepositories, loadOptions, loadFrameworks]).then(function() {
             $scope.errors = PhCompare.validateInput($stateParams.originalProject,
                                                     $stateParams.newProject,
                                                     $stateParams.originalRevision,
@@ -272,13 +331,14 @@ perf.controller('CompareResultsCtrl', [
                 return;
             }
             $scope.filterOptions = {
-                testFilter: $stateParams.filterTest || "",
-                platformFilter: $stateParams.filterPlatform || "",
+                framework: _.find($scope.frameworks, {
+                    id: parseInt($stateParams.framework)
+                }) || $scope.frameworks[0],
+                filter: $stateParams.filter || "",
                 showOnlyImportant: $stateParams.showOnlyImportant === undefined ||
                     parseInt($stateParams.showOnlyImportant),
                 showOnlyConfident: $stateParams.showOnlyConfident !== undefined ||
-                    parseInt($stateParams.showOnlyConfident),
-                showUnreliablePlatforms: Boolean(parseInt($stateParams.showUnreliablePlatforms))
+                    parseInt($stateParams.showOnlyConfident)
             };
 
             $scope.originalProject = ThRepositoryModel.getRepo(

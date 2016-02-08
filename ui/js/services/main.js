@@ -19,7 +19,7 @@ treeherder.factory('thUrl', [
                 var uri = "/jobs/" + jobId + url;
                 return thUrl.getProjectUrl(uri, repoName);
             },
-            getPushUrl: function(repo, fromChange, toChange) {
+            getJobsUrl: function(repo, fromChange, toChange) {
                 return "index.html#/jobs?" + _.reduce({
                     repo: repo, fromchange: fromChange, tochange: toChange
                 }, function(result, v, k) {
@@ -55,7 +55,6 @@ treeherder.factory('thCloneHtml', [
             'jobGroupCountClone.html',
             'jobBtnClone.html',
             'runnableJobBtnClone.html',
-            'revisionUrlClone.html',
             'pushlogRevisionsClone.html'
         ];
 

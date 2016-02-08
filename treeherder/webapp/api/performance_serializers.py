@@ -2,21 +2,42 @@ from rest_framework import serializers
 
 from treeherder.perf.models import (PerformanceAlert,
                                     PerformanceAlertSummary,
+                                    PerformanceFramework,
                                     PerformanceSignature)
 
 
+class PerformanceFrameworkSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PerformanceFramework
+        fields = ['id', 'name']
+
+
+class TestOptionsSerializer(serializers.JSONField):
+    def to_representation(self, obj):
+        # if extra_propeties is blank, just return nothing
+        if type(obj) == dict:
+            return obj.get('test_options', [])
+        return []
+
+
 class PerformanceSignatureSerializer(serializers.ModelSerializer):
+    framework_id = serializers.SlugRelatedField(
+        slug_field="id", source="framework",
+        queryset=PerformanceFramework.objects.all())
     option_collection_hash = serializers.SlugRelatedField(
         read_only=True, slug_field="option_collection_hash",
         source="option_collection")
     machine_platform = serializers.SlugRelatedField(read_only=True,
                                                     slug_field="platform",
                                                     source="platform")
+    test_options = TestOptionsSerializer(read_only=True,
+                                         source="extra_properties")
 
     class Meta:
         model = PerformanceSignature
-        fields = ['signature_hash', 'machine_platform', 'suite', 'test',
-                  'lower_is_better', 'option_collection_hash']
+        fields = ['framework_id', 'signature_hash', 'machine_platform',
+                  'suite', 'test', 'lower_is_better',
+                  'option_collection_hash', 'test_options']
 
 
 class PerformanceDecimalField(serializers.DecimalField):
@@ -29,6 +50,10 @@ class PerformanceDecimalField(serializers.DecimalField):
 
 class PerformanceAlertSerializer(serializers.ModelSerializer):
     series_signature = PerformanceSignatureSerializer(read_only=True)
+    revised_summary_id = serializers.SlugRelatedField(
+        slug_field="id", source="revised_summary",
+        allow_null=True,
+        queryset=PerformanceAlertSummary.objects.all())
 
     # express quantities in terms of decimals to save space
     amount_abs = PerformanceDecimalField(read_only=True)
@@ -39,8 +64,9 @@ class PerformanceAlertSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PerformanceAlert
-        fields = ['series_signature', 'is_regression', 'prev_value',
-                  'new_value', 't_value', 'amount_abs', 'amount_pct']
+        fields = ['id', 'status', 'series_signature', 'is_regression',
+                  'prev_value', 'new_value', 't_value', 'amount_abs',
+                  'amount_pct', 'revised_summary_id', 'bug_number']
 
 
 class PerformanceAlertSummarySerializer(serializers.ModelSerializer):
@@ -48,7 +74,12 @@ class PerformanceAlertSummarySerializer(serializers.ModelSerializer):
     repository = serializers.SlugRelatedField(read_only=True,
                                               slug_field='name')
 
+    # marking these fields as readonly, the user should not be modifying them
+    prev_result_set_id = serializers.ReadOnlyField()
+    result_set_id = serializers.ReadOnlyField()
+    last_updated = serializers.ReadOnlyField()
+
     class Meta:
         model = PerformanceAlertSummary
-        fields = ['id', 'result_set_id', 'prev_result_set_id', 'last_updated',
-                  'repository', 'alerts']
+        fields = ['id', 'result_set_id', 'prev_result_set_id',
+                  'last_updated', 'repository', 'alerts']

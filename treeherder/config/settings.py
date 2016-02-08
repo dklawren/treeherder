@@ -1,8 +1,5 @@
-# Django settings for webapp project.
-import os
 from datetime import timedelta
 
-import dj_database_url
 import environ
 from kombu import (Exchange,
                    Queue)
@@ -11,25 +8,19 @@ from treeherder import path
 
 env = environ.Env()
 
-TREEHERDER_MEMCACHED = os.environ.get("TREEHERDER_MEMCACHED", "127.0.0.1:11211")
-TREEHERDER_MEMCACHED_KEY_PREFIX = os.environ.get("TREEHERDER_MEMCACHED_KEY_PREFIX", "treeherder")
+TREEHERDER_MEMCACHED = env("TREEHERDER_MEMCACHED", default="127.0.0.1:11211")
+TREEHERDER_MEMCACHED_KEY_PREFIX = env("TREEHERDER_MEMCACHED_KEY_PREFIX", default="treeherder")
 
-DEBUG = os.environ.get("TREEHERDER_DEBUG", False)
+DEBUG = env.bool("TREEHERDER_DEBUG", default=False)
 
-TREEHERDER_REQUEST_PROTOCOL = os.environ.get("TREEHERDER_REQUEST_PROTOCOL", "http")
-TREEHERDER_REQUEST_HOST = os.environ.get("TREEHERDER_REQUEST_HOST", "local.treeherder.mozilla.org")
+TREEHERDER_REQUEST_PROTOCOL = env("TREEHERDER_REQUEST_PROTOCOL", default="http")
+TREEHERDER_REQUEST_HOST = env("TREEHERDER_REQUEST_HOST", default="local.treeherder.mozilla.org")
 
 # Default to retaining data for ~4 months.
 DATA_CYCLE_DAYS = env.int("DATA_CYCLE_DAYS", default=120)
 
-RABBITMQ_USER = os.environ.get("TREEHERDER_RABBITMQ_USER", "guest")
-RABBITMQ_PASSWORD = os.environ.get("TREEHERDER_RABBITMQ_PASSWORD", "guest")
-RABBITMQ_VHOST = os.environ.get("TREEHERDER_RABBITMQ_VHOST", "/")
-RABBITMQ_HOST = os.environ.get("TREEHERDER_RABBITMQ_HOST", "localhost")
-RABBITMQ_PORT = os.environ.get("TREEHERDER_RABBITMQ_PORT", "5672")
-
 # Make this unique, and don't share it with anybody.
-SECRET_KEY = os.environ.get("TREEHERDER_DJANGO_SECRET_KEY")
+SECRET_KEY = env("TREEHERDER_DJANGO_SECRET_KEY")
 
 SITE_ID = 1
 ROOT_URLCONF = "treeherder.config.urls"
@@ -39,7 +30,7 @@ TIME_ZONE = "America/Los_Angeles"
 USE_I18N = False
 USE_L10N = True
 
-SERVE_MINIFIED_UI = os.environ.get("SERVE_MINIFIED_UI") == "True"
+SERVE_MINIFIED_UI = env.bool("SERVE_MINIFIED_UI", default=False)
 WHITENOISE_ROOT = path("..", "dist" if SERVE_MINIFIED_UI else "ui")
 
 STATIC_ROOT = path("static")
@@ -51,6 +42,9 @@ MEDIA_URL = "/media/"
 # Default minimum regression threshold for perfherder is 1% (otherwise
 # e.g. the build size tests will alert on every commit)
 PERFHERDER_REGRESSION_THRESHOLD = 2
+
+# Only generate alerts for data newer than this time in seconds in perfherder
+PERFHERDER_ALERTS_MAX_AGE = timedelta(weeks=2)
 
 # Create hashed+gzipped versions of assets during collectstatic,
 # which will then be served by WhiteNoise with a suitable max-age.
@@ -71,6 +65,7 @@ TEMPLATE_CONTEXT_PROCESSORS = (
 )
 
 MIDDLEWARE_CLASSES = [
+    'django.middleware.gzip.GZipMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -121,7 +116,6 @@ INSTALLED_APPS = [
     'treeherder.webapp',
     'treeherder.log_parser',
     'treeherder.etl',
-    'treeherder.workers',
     'treeherder.embed',
     'treeherder.perf',
     'treeherder.autoclassify',
@@ -190,9 +184,10 @@ CELERY_QUEUES = (
     Queue('buildapi_4hr', Exchange('default'), routing_key='buildapi_4hr'),
     Queue('fetch_allthethings', Exchange('default'), routing_key='fetch_allthethings'),
     Queue('cycle_data', Exchange('default'), routing_key='cycle_data'),
-    Queue('calculate_eta', Exchange('default'), routing_key='calculate_eta'),
+    Queue('calculate_durations', Exchange('default'), routing_key='calculate_durations'),
     Queue('fetch_bugs', Exchange('default'), routing_key='fetch_bugs'),
-    Queue('store_pulse_jobs', Exchange('default'), routing_key='store_pulse_jobs')
+    Queue('store_pulse_jobs', Exchange('default'), routing_key='store_pulse_jobs'),
+    Queue('generate_perf_alerts', Exchange('default'), routing_key='generate_perf_alerts'),
 )
 
 CELERY_ACCEPT_CONTENT = ['json']
@@ -253,12 +248,12 @@ CELERYBEAT_SCHEDULE = {
             'queue': 'cycle_data'
         }
     },
-    'calculate-eta-every-6-hours': {
-        'task': 'calculate-eta',
+    'calculate-durations-every-6-hours': {
+        'task': 'calculate-durations',
         'schedule': timedelta(hours=6),
         'relative': True,
         'options': {
-            'queue': 'calculate_eta'
+            'queue': 'calculate_durations'
         }
     },
     'fetch-bugs-every-hour': {
@@ -282,12 +277,11 @@ REST_FRAMEWORK = {
     ),
     'EXCEPTION_HANDLER': 'treeherder.webapp.api.exceptions.exception_handler',
     'DEFAULT_THROTTLE_CLASSES': (
-        'treeherder.webapp.api.throttling.OauthKeyThrottle',
-        'treeherder.webapp.api.throttling.HawkClientThrottle'
+        'treeherder.webapp.api.throttling.HawkClientThrottle',
     ),
     'DEFAULT_THROTTLE_RATES': {
         'jobs': '220/minute',
-        'resultset': '220/minute'
+        'resultset': '400/minute'  # temporary increase: https://bugzilla.mozilla.org/show_bug.cgi?id=1232776
     },
     'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.AcceptHeaderVersioning',
     'DEFAULT_VERSION': '1.0',
@@ -295,11 +289,12 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.SessionAuthentication',
         'hawkrest.HawkAuthentication',
-        'treeherder.webapp.api.auth.TwoLeggedOauthAuthentication',
-    )
+    ),
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
 }
 
-SITE_URL = os.environ.get("SITE_URL", "http://local.treeherder.mozilla.org")
+SITE_URL = env("SITE_URL", default="http://local.treeherder.mozilla.org")
+APPEND_SLASH = False
 
 BUILDAPI_PENDING_URL = "https://secure.pub.build.mozilla.org/builddata/buildjson/builds-pending.js"
 BUILDAPI_RUNNING_URL = "https://secure.pub.build.mozilla.org/builddata/buildjson/builds-running.js"
@@ -326,10 +321,7 @@ CORS_ORIGIN_ALLOW_ALL = True
 # set ALLOWED_HOSTS to match your domain name.
 # An asterisk means everything but it's not secure.
 # IP addresses are also allowed. A dot is used to include all sub domains
-if (os.environ.get('TREEHERDER_ALLOWED_HOSTS')):
-    ALLOWED_HOSTS = [os.environ.get('TREEHERDER_ALLOWED_HOSTS')]
-else:
-    ALLOWED_HOSTS = [".mozilla.org", ".allizom.org"]
+ALLOWED_HOSTS = env.list("TREEHERDER_ALLOWED_HOSTS", default=[".mozilla.org", ".allizom.org"])
 
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -338,12 +330,16 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 MIRROR_CLASSIFICATIONS = True
 ES_HOST = "http://of-elasticsearch-zlb.webapp.scl3.mozilla.com:9200"
 
+# Enable integration between autoclassifier and jobs
+AUTOCLASSIFY_JOBS = env.bool("AUTOCLASSIFY_JOBS", default=False)
+
 # timeout for requests to external sources
 # like ftp.mozilla.org or hg.mozilla.org
-TREEHERDER_REQUESTS_TIMEOUT = 30
+REQUESTS_TIMEOUT = 30
+TREEHERDER_USER_AGENT = 'treeherder/{}'.format(TREEHERDER_REQUEST_HOST)
 
 # The pulse uri that is passed to kombu
-PULSE_URI = os.environ.get("PULSE_URI", "amqps://guest:guest@pulse.mozilla.org/")
+PULSE_URI = env("PULSE_URI", default="amqps://guest:guest@pulse.mozilla.org/")
 
 # Note we will never publish any pulse messages unless the exchange namespace is
 # set this normally is your pulse username.
@@ -394,14 +390,14 @@ PULSE_DATA_INGESTION_CONFIG = env.url("PULSE_DATA_INGESTION_CONFIG", default="")
 
 # Whether the Queues created for pulse ingestion are durable or not.
 # For local data ingestion, you probably should set this to False
-PULSE_DATA_INGESTION_QUEUES_DURABLE = env("PULSE_DATA_INGESTION_QUEUES_DURABLE",
-                                          default=True)
+PULSE_DATA_INGESTION_QUEUES_DURABLE = env.bool("PULSE_DATA_INGESTION_QUEUES_DURABLE",
+                                               default=True)
 
 # Whether the Queues created for pulse ingestion auto-delete after connections
 # are closed.
 # For local data ingestion, you probably should set this to True
-PULSE_DATA_INGESTION_QUEUES_AUTO_DELETE = env("PULSE_DATA_INGESTION_QUEUES_AUTO_DELETE",
-                                              default=False)
+PULSE_DATA_INGESTION_QUEUES_AUTO_DELETE = env.bool("PULSE_DATA_INGESTION_QUEUES_AUTO_DELETE",
+                                                   default=False)
 
 # The git-ignored settings_local.py file should only be used for local development.
 if env.bool("ENABLE_LOCAL_SETTINGS_FILE", default=False):
@@ -419,20 +415,18 @@ TEMPLATE_DEBUG = DEBUG
 # The database config is defined using environment variables of form:
 #   'mysql://username:password@host:optional_port/database_name'
 DATABASES = {
-    'default': dj_database_url.config(env='DATABASE_URL'),
-    'read_only': dj_database_url.config(env='DATABASE_URL_RO')
+    'default': env.db_url('DATABASE_URL'),
+    'read_only': env.db_url('DATABASE_URL_RO')
 }
 
 # Setup ssl connection for aws rds.
-# Once https://github.com/kennethreitz/dj-database-url/pull/52 is fixed,
-# Heroku can have the option added to the DATABASE_URL query string,
-# and this can be removed.
-if 'IS_HEROKU' in os.environ:
-    ca_path = '/app/deployment/aws/combined-ca-bundle.pem'
+# Can be removed when django-environ supports setting this:
+# https://github.com/joke2k/django-environ/issues/72
+if env.bool('IS_HEROKU', default=False):
     for db_name in DATABASES:
         DATABASES[db_name]['OPTIONS'] = {
             'ssl': {
-                'ca': ca_path
+                'ca': '/app/deployment/aws/combined-ca-bundle.pem'
             }
         }
 
@@ -441,9 +435,10 @@ MEMCACHED_LOCATION = TREEHERDER_MEMCACHED.strip(',').split(',')
 
 CACHES = {
     "default": {
-        "BACKEND": "treeherder.cache.MemcachedCache",
+        "BACKEND": "django_pylibmc.memcached.PyLibMCCache",
         "LOCATION": MEMCACHED_LOCATION,
-        "TIMEOUT": 0,
+        # Cache forever
+        "TIMEOUT": None,
         # bumping this is effectively equivalent to restarting memcached
         "VERSION": 1,
     },
@@ -460,24 +455,15 @@ CACHES = {
 
 KEY_PREFIX = TREEHERDER_MEMCACHED_KEY_PREFIX
 
-# celery broker setup
-BROKER_URL = 'amqp://{0}:{1}@{2}:{3}/{4}'.format(
-    RABBITMQ_USER,
-    RABBITMQ_PASSWORD,
-    RABBITMQ_HOST,
-    RABBITMQ_PORT,
-    RABBITMQ_VHOST
-)
+# Celery broker setup
+BROKER_URL = env('BROKER_URL')
 
 # This code handles the memcachier service on heroku.
-if "IS_HEROKU" in os.environ:
+if env.bool('IS_HEROKU', default=False):
     from memcacheify import memcacheify
     CACHES['default'].update(
         memcacheify().get('default')
     )
-
-if "CLOUDAMQP_URL" in os.environ:
-    BROKER_URL = os.environ["CLOUDAMQP_URL"]
 
 CELERY_IGNORE_RESULT = True
 

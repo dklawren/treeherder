@@ -135,9 +135,11 @@ treeherder.controller('PluginCtrl', [
                 ]).then(function(results){
                     //the first result comes from the job detail promise
                     $scope.job = results[0];
-                    $scope.eta = $scope.job.get_current_eta();
-                    $scope.eta_abs = Math.abs($scope.job.get_current_eta());
-                    $scope.typical_eta = $scope.job.get_typical_eta();
+                    if ($scope.job.state =='running') {
+                        $scope.eta = $scope.job.running_time_remaining();
+                        $scope.eta_abs = Math.abs($scope.eta);
+                    }
+                    $scope.average_duration = $scope.job.get_average_duration();
                     $scope.jobRevision = ThResultSetStore.getSelectedJob($scope.repoName).job.revision;
                     $scope.jobIds = results[4];
 
@@ -300,16 +302,22 @@ treeherder.controller('PluginCtrl', [
             var starttime = $scope.job.start_timestamp || $scope.job.submit_timestamp;
             duration = numberFilter((endtime-starttime)/60, 0) + " minute(s)";
 
-            $scope.visibleTimeFields.duration = duration;
-
             if ($scope.job.start_timestamp) {
                 $scope.visibleTimeFields.startTime = dateFilter(
                     $scope.job.start_timestamp*1000, thDateFormat);
+                $scope.visibleTimeFields.duration = duration;
+            } else {
+                $scope.visibleTimeFields.duration = "Not started (queued for " + duration + ")";
             }
+
             if ($scope.job.end_timestamp) {
                 $scope.visibleTimeFields.endTime = dateFilter(
                     $scope.job.end_timestamp*1000, thDateFormat);
             }
+
+            // Scroll the job details pane to the top during job selection
+            var jobDetailsPane = document.getElementById('job-details-pane');
+            jobDetailsPane.scrollTop = 0;
         };
 
         $scope.getCountPinnedJobs = function() {
